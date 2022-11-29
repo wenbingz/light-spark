@@ -1,7 +1,7 @@
 package org.lighspark
 package core.rdd
 
-import org.lighspark.core.SparkContext
+import org.lighspark.core.{Block, SparkContext, SparkEnv}
 import org.lighspark.core.partition.{HashPartitioner, Partition}
 
 import scala.collection.mutable.ArrayBuffer
@@ -10,7 +10,7 @@ import scala.reflect.ClassTag
 class SequencePartition[T: ClassTag](private val rddId: Int, private val splitId: Int, val data: Seq[T]) extends Partition {
   override val index: Int = splitId
 }
-class SequenceRDD[T: ClassTag](private val sc: SparkContext, private val data: Seq[T], private val splits: Int)
+class SequenceRDD[T: ClassTag](@transient private val sc: SparkContext, private val data: Seq[T], private val splits: Int)
   extends RDD[T](sc, Nil) {
 
   override def compute(split: Partition): Iterator[T] = {
@@ -37,6 +37,11 @@ class SequenceRDD[T: ClassTag](private val sc: SparkContext, private val data: S
       partitions
     } else {
       val slices = splitSeq()
+      slices.indices.map(i => {
+        val block = new Block(rddId = this.id, index = i, data = slices(i).toIterator)
+        sc.blockManager.addBlock(block)
+        SparkEnv.reportBlock(block.id)
+      })
       partitions = slices.indices.map(i => new SequencePartition[T](id, i, slices(i))).seq
       partitions
     }

@@ -2,10 +2,15 @@ package org.lighspark
 package core
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
 
 class Block(private val rddId: Int, private val index: Int, val data: Iterator[Any]) extends Serializable {
-  final def getId = "block_" + rddId + "_" + index;
+  final def id = Block.getId(rddId, index)
+}
+object Block {
+  def getId(rddId: Int, index: Int) = {
+    "block_" + rddId + "_" + index
+  }
 }
 
 class BlockManager {
@@ -28,7 +33,7 @@ class BlockManager {
     localCache.get(blockId)
   }
   def addBlock(block: Block): Unit = {
-    localCache += block.getId -> block
+    localCache += block.id -> block
   }
   def removeCache(blockId: String) = localCache.remove(blockId)
 }

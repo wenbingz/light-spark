@@ -2,7 +2,7 @@ package org.lighspark
 package core
 
 import org.lighspark.core.rdd.{RDD, SequenceRDD}
-import org.lighspark.driver.Driver
+import org.lighspark.core.scheduler.Task
 
 import scala.actors.threadpool.AtomicInteger
 import scala.reflect.ClassTag
@@ -10,14 +10,8 @@ import scala.reflect.ClassTag
 class SparkContext {
   @transient var rddId: AtomicInteger = new AtomicInteger()
   @transient var taskId: AtomicInteger = new AtomicInteger()
-
-  val blockManager = new BlockManager
-
-  @transient var rpcEndpoint: Driver = new Driver(blockManager, 5)
-
-  new Thread() {
-    Driver.main(rpcEndpoint)
-  }.start()
+  @transient val blockManager = new BlockManager
+  @transient var thread = SparkEnv.initialize(blockManager, true, 5, null)
 
   def newRddId: Int = {
     rddId.getAndIncrement()
@@ -30,7 +24,10 @@ class SparkContext {
 
 
   def parallelize[T: ClassTag](data: Seq[T], numSplits: Int):  SequenceRDD[T] = {
-    new SequenceRDD[T](this, data, numSplits)
+    val rdd = new SequenceRDD[T](this, data, numSplits)
+    val task = new Task[T](rdd, rdd.getPartitions().head, 33)
+    SparkEnv.sendTask(task)
+    rdd
   }
 
   def runJob[T, U: ClassTag](

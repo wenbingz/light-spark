@@ -26,12 +26,36 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
     }
   }
 
+  def this(@transient oneParent: RDD[_]) = {
+    this(oneParent.sc, Seq(new NarrowDependency(oneParent)))
+  }
   final def iterator(split: Partition): Iterator[T] = {
     getOrCompute(split)
   }
 
   def map[U: ClassTag](f: T => U): RDD[U] = {
-    null
+    new MappedRDD[U, T](this, (_, iter) => iter.map(f))
+  }
+
+  def reduce(func: (T, T) => T): T = {
+    val reducePartition: Iterator[T] => Option[T] =  iter => {
+      if (iter.hasNext) {
+        Some(iter.reduceLeft(func))
+      } else {
+        None
+      }
+    }
+    var jobResult: Option[T] = None
+    val mergeResult =(_: Int, taskResult: Option[T]) => {
+      if (taskResult.isDefined) {
+        jobResult = jobResult match {
+          case Some(value) => Some(func(value, taskResult.get))
+          case None => taskResult
+        }
+      }
+    }
+    sc.dagScheduler.runJob(this, this.getPartitions().map{p => p.index}, reducePartition, mergeResult)
+    jobResult.getOrElse(throw new RuntimeException("do not capture valid final result"))
   }
 
   def parallel[T: ClassTag](data: Seq[T]): Unit = {

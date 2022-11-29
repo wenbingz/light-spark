@@ -1,13 +1,11 @@
 package org.lighspark.core
 
-import akka.actor.TypedActor.context
 import akka.actor.{Actor, ActorRef, ActorSelection, ActorSystem, Props}
 import akka.pattern.ask
 import akka.remote.transport.ActorTransportAdapter.AskTimeout
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import org.lighspark.core.SparkEnv.{driverRef, syncInvokeTimeout}
-import org.lighspark.core.scheduler.Task
+import org.lighspark.core.scheduler.{DagScheduler, Task}
 import org.lighspark.executor.TaskScheduler
 import org.lighspark.rpc.{BlockLocation, GetBlock, HeartBeat, InternalGetBlock, QueryBlock, RegisterExecutor, RegisteredExecutor, ReportBlock, SendBlock, SendExecutorTask, SendHeartBeat, SendTask, TaskComplete}
 
@@ -18,7 +16,7 @@ import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 
 case class ExecutorInfo(actorUrl: String)
-class SparkEnv(blockManager: BlockManager, syncInvokeTimeout: Int, driverUrl: String) extends Actor {
+class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvokeTimeout: Int, driverUrl: String) extends Actor {
 
 
   override def preStart(): Unit = {
@@ -54,8 +52,8 @@ class SparkEnv(blockManager: BlockManager, syncInvokeTimeout: Int, driverUrl: St
       println(sender().path.toString)
       println("heart beat from " + executorId)
     }
-    case TaskComplete(taskId) => {
-      println(taskId + " has been completed successfully!")
+    case TaskComplete(task, result) => {
+      dagScheduler.completeATask(task, result)
     }
 
     case RegisteredExecutor(executorId: Int) => {
@@ -99,20 +97,22 @@ object SparkEnv {
   val id: AtomicInteger = new AtomicInteger(0)
   var taskScheduler: TaskScheduler = _
   var driverRef: ActorSelection = _
+  var dagScheduler: DagScheduler = _
 
   def createDriver(): SparkEnv = {
-    new SparkEnv(blockManager, syncInvokeTimeout, null)
+    new SparkEnv(dagScheduler, blockManager, syncInvokeTimeout, null)
   }
 
   def  createExecutor(): SparkEnv = {
-    new SparkEnv(blockManager, syncInvokeTimeout, driverUrl)
+    new SparkEnv(dagScheduler, blockManager, syncInvokeTimeout, driverUrl)
   }
 
-  def initialize(blockManager: BlockManager, isDriver: Boolean, syncInvokeTimeout: Int, driverUrl: String): Thread = {
+  def initialize(dagScheduler: DagScheduler, blockManager: BlockManager, isDriver: Boolean, syncInvokeTimeout: Int, driverUrl: String): Thread = {
     this.isDriver = isDriver
     this.blockManager = blockManager
     this.syncInvokeTimeout = syncInvokeTimeout
     this.driverUrl = driverUrl
+    this.dagScheduler = dagScheduler
     if (isDriver) {
 
       val config = ConfigFactory.parseString(
@@ -124,19 +124,14 @@ object SparkEnv {
       )
       val thread = new Thread() {
         override def run() = {
-          println("here " + "-----------------------------------------")
           val driverActorSystem = ActorSystem("DriverActorSystem", config)
           actorRef = driverActorSystem.actorOf(Props(createDriver()), "DriverActor")
-          println("here " + "-----------------------------------------")
           Thread.sleep(1000 * 60 * 60 * 24 * 1000)
         }
       }
-      println("exit ===============================")
       thread.start()
-      println("exit @@@@@@@@@@@@@@@@@@@@@")
       thread
     } else {
-      println("here " + "++++++++++++++++++++++++++++++++++++++++++")
       val config = ConfigFactory.parseString(
         """
           |akka.actor.provider = "akka.remote.RemoteActorRefProvider"
@@ -188,11 +183,10 @@ object SparkEnv {
     }
   }
 
-  def reportSuccessfulTask(taskId: Int): Unit = {
-    driverRef ! TaskComplete(taskId)
+  def reportSuccessfulTask(task: Task[_], result: Any): Unit = {
+    driverRef ! TaskComplete(task, result: Any)
   }
   def sendTask[T: ClassTag](task: Task[T]): Boolean = {
-    println("here ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
     synchronized(id2Executor) {
       if (id2Executor.isEmpty) {
         println("no executor to send task " + task.taskId)

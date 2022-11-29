@@ -10,3 +10,9 @@ class Task[T: ClassTag](val rdd: RDD[T], val split: Partition, val taskId: Int) 
     rdd.getOrCompute(split)
   }
 }
+
+class ResultTask[T: ClassTag, U: ClassTag](private val _rdd: RDD[T], val _split: Partition, val _taskId: Int, private val merge: (Iterator[T]) => U) extends Task[T](_rdd, _split, _taskId) {
+  def result(): U = {
+    merge(execute())
+  }
+}

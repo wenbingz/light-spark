@@ -22,7 +22,6 @@ class DagScheduler(private val sc: SparkContext) {
     println("task " + task.taskId + " completed")
     task match {
       case rt: ResultTask[_, _] => {
-        println(res + " ------------------------------------------")
         results.append(res)
       }
       case _ => {

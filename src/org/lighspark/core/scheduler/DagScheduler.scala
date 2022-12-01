@@ -8,6 +8,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
+// TODO cut into stages and add task retry
 class DagScheduler(private val sc: SparkContext) {
   val taskId = new AtomicInteger(0)
   val completedTask = new mutable.HashSet[Int]()
@@ -22,6 +23,7 @@ class DagScheduler(private val sc: SparkContext) {
     println("task " + task.taskId + " completed")
     task match {
       case rt: ResultTask[_, _] => {
+        println("it is a result task " + res)
         results.append(res)
       }
       case _ => {
@@ -42,6 +44,7 @@ class DagScheduler(private val sc: SparkContext) {
       }
     }
   }
+  // TODO deduplicate tasks to avoid computed rdd partition calculation
   def parseTasks(): Unit = {
     if (dependencies == Nil || dependencies.isEmpty) {
       return

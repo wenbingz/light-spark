@@ -20,10 +20,10 @@ class SequenceRDD[T: ClassTag](@transient private val sc: SparkContext, private 
 
   private def splitSeq(): Seq[Seq[T]] = {
     val arr = new Array[ArrayBuffer[T]](splits)
+    for (i <- 0 until splits) {
+      arr(i) = new ArrayBuffer[T]
+    }
     for (d <- data) {
-      if (arr(partitioner.getPartition(d)) == null) {
-        arr(partitioner.getPartition(d)) = new ArrayBuffer[T]
-      }
       arr(partitioner.getPartition(d)).append(d)
     }
     arr
@@ -31,18 +31,18 @@ class SequenceRDD[T: ClassTag](@transient private val sc: SparkContext, private 
 
   partitioner = new HashPartitioner(splits)
 
-  var partitions: Seq[SequencePartition[T]] = null
-  override def getPartitions(): Seq[Partition] = {
+  var partitions: Array[Partition] = null
+  override def getPartitions(): Array[Partition] = {
     if (partitions != null) {
       partitions
     } else {
       val slices = splitSeq()
       slices.indices.map(i => {
         val block = new Block(rddId = this.id, index = i, data = slices(i).toIterator)
-        sc.blockManager.addBlock(block)
+        SparkEnv.blockManager.addBlock(block)
         SparkEnv.reportBlock(block.id)
       })
-      partitions = slices.indices.map(i => new SequencePartition[T](id, i, slices(i))).seq
+      partitions = slices.indices.map(i => new SequencePartition[T](id, i, slices(i))).toArray
       partitions
     }
   }

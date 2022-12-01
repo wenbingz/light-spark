@@ -98,7 +98,7 @@ object SparkEnv {
   var taskScheduler: TaskScheduler = _
   var driverRef: ActorSelection = _
   var dagScheduler: DagScheduler = _
-
+  val defaultShufflePartition = 10
   def createDriver(): SparkEnv = {
     new SparkEnv(dagScheduler, blockManager, syncInvokeTimeout, null)
   }

@@ -1,8 +1,9 @@
 package org.lighspark
 package core.rdd
 import core.{Block, SparkContext, SparkEnv}
-import org.lighspark.core.partition.{Partition, Partitioner}
+import org.lighspark.core.partition.{HashPartitioner, Partition, Partitioner}
 import org.lighspark.core.scheduler.Task
+import scala.language.implicitConversions
 
 import scala.reflect.ClassTag
 
@@ -10,7 +11,12 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
   def clearDependencies = dependencies = null
   def compute(split: Partition): Iterator[T]
   def getDependencies(): Seq[Dependency[_]] = dependencies
-  def getPartitions(): Seq[Partition]
+  def getPartitions(): Array[Partition]
+
+
+  implicit def rddToPairRDDFunctions[K, V](rdd: RDD[(K, V)]) (implicit kt: ClassTag[K], vt: ClassTag[V]): PairRDDFunctions[K, V] = {
+    new PairRDDFunctions(rdd)
+  }
 
   val id = sc.newRddId
   var partitioner: Partitioner = _
@@ -25,14 +31,23 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
       }
     }
   }
-
+  def context = sc
   def this(@transient oneParent: RDD[_]) = {
-    this(oneParent.sc, Seq(new NarrowDependency(oneParent)))
+    this(oneParent.sc, Seq(new One2OneDependency(oneParent)))
   }
   final def iterator(split: Partition): Iterator[T] = {
     getOrCompute(split)
   }
 
+//  def repartition(partitionNum: Int) = {
+//
+//  }
+
+  def groupBy[K](func: T => K)(implicit kt: ClassTag[K]): RDD[(K, Iterable[T])] = {
+    this.map(t => {
+      (func(t), t)
+    }).groupByKey()
+  }
   def map[U: ClassTag](f: T => U): RDD[U] = {
     new MappedRDD[U, T](this, (_, iter) => iter.map(f))
   }

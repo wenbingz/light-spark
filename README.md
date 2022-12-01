@@ -1,10 +1,11 @@
 ## What is light spark
-just very simple implementation of spark to help learner understand how Spark framework works
+just very simple implementation of spark to help beginner understand how Spark framework works
 
 ## All the Spark core concepts included
 - RDD
 - Dag scheduler
 - Block Manager
+- Shuffle
 - akka as messaging protocol
 
 ## It can really be run in distributed mode

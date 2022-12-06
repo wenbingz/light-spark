@@ -11,12 +11,15 @@ class ShuffledRDDPartition(private val rddId: Int, private val splitId: Int) ext
   override val index: Int = splitId
 }
 
-// TODO a very trivial implementation shuffle with shuffle map and shuffle read but complexity is very high
+// TODO a very trivial implementation without shuffle map and shuffle read and the complexity is very high, should be optimized
 class ShuffledRDD[K: ClassTag, V: ClassTag](prev: RDD[(K, V)], val partitionSize: Int = SparkEnv.defaultShufflePartition) extends RDD[(K, Iterable[V])](prev.context, Nil) {
   partitioner = new HashKeyPartitioner(partitionSize)
-
+  var dependencies: Seq[Dependency[_]] = null
   override def getDependencies() = {
-    Seq(new FullDependency[(K, V)](prev))
+   if (dependencies == null) {
+     dependencies = Seq(new FullDependency[(K, V)](prev))
+   }
+    dependencies
   }
 
   override def compute(split: Partition): Iterator[(K, Iterable[V])] = {

@@ -9,6 +9,7 @@ import org.lighspark.core.scheduler.{DagScheduler, Task}
 import org.lighspark.executor.TaskScheduler
 import org.lighspark.rpc.{BlockLocation, GetBlock, HeartBeat, InternalGetBlock, QueryBlock, RegisterExecutor, RegisteredExecutor, ReportBlock, SendBlock, SendExecutorTask, SendHeartBeat, SendTask, TaskComplete}
 
+import java.util.concurrent.ConcurrentLinkedQueue
 import scala.actors.threadpool.AtomicInteger
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -40,8 +41,8 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
     case ReportBlock(blockId) => {
       if (sender().path.toString.contains("akka.tcp")) {
         blockManager.addBlockLocation(blockId, sender().path.toString)
-      } else {
-        blockManager.addBlockLocation(blockId, "akka.tcp://DriverActorSystem@localhost:18888/user/DriverActor")
+      } else { // only driver will report block to itself
+        blockManager.addBlockLocation(blockId, SparkEnv.driverUrl)
       }
       sender() ! "succ"
     }
@@ -49,7 +50,6 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
       sender() ! SendBlock(blockManager.getBlock(blockId))
     }
     case HeartBeat(executorId) => {
-      println(sender().path.toString)
       println("heart beat from " + executorId)
     }
     case TaskComplete(task, result) => {
@@ -61,9 +61,8 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
       println("registered with executor Id " + executorId)
     }
     case SendTask(task) => {
-      println(sender().path.toString)
       SparkEnv.queue.synchronized {
-        SparkEnv.queue.enqueue(task)
+        SparkEnv.queue.offer(task)
       }
     }
     case SendHeartBeat => {
@@ -84,7 +83,7 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
 }
 
 object SparkEnv {
-  var queue = new mutable.Queue[Task[Any]]
+  var queue = new ConcurrentLinkedQueue[Task[Any]]
   var blockManager: BlockManager = _
   var rpcEndpoint: SparkEnv = _
   var isDriver: Boolean = false
@@ -107,25 +106,24 @@ object SparkEnv {
     new SparkEnv(dagScheduler, blockManager, syncInvokeTimeout, driverUrl)
   }
 
-  def initialize(dagScheduler: DagScheduler, blockManager: BlockManager, isDriver: Boolean, syncInvokeTimeout: Int, driverUrl: String): Thread = {
+  def initialize(dagScheduler: DagScheduler, blockManager: BlockManager, isDriver: Boolean, syncInvokeTimeout: Int, driverPort: Int, driverActorName: String, driverHost: String): Thread = {
     this.isDriver = isDriver
     this.blockManager = blockManager
     this.syncInvokeTimeout = syncInvokeTimeout
-    this.driverUrl = driverUrl
+    this.driverUrl = "akka.tcp://DriverActorSystem@" + driverHost + ":" + driverPort +  "/user/" + driverActorName
     this.dagScheduler = dagScheduler
     if (isDriver) {
-
       val config = ConfigFactory.parseString(
         """
           |akka.actor.provider = "akka.remote.RemoteActorRefProvider"
-          |akka.remote.netty.tcp.hostname = localhost
-          |akka.remote.netty.tcp.port = 18888
-          |""".stripMargin
+          |akka.remote.netty.tcp.hostname = %s
+          |akka.remote.netty.tcp.port = %d
+          |""".format(driverHost, driverPort).stripMargin
       )
       val thread = new Thread() {
         override def run() = {
           val driverActorSystem = ActorSystem("DriverActorSystem", config)
-          actorRef = driverActorSystem.actorOf(Props(createDriver()), "DriverActor")
+          actorRef = driverActorSystem.actorOf(Props(createDriver()), driverActorName)
           Thread.sleep(1000 * 60 * 60 * 24 * 1000)
         }
       }

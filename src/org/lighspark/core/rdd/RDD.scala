@@ -1,32 +1,29 @@
 package org.lighspark
 package core.rdd
 import core.{Block, SparkContext, SparkEnv}
-import org.lighspark.core.partition.{HashPartitioner, Partition, Partitioner}
-import org.lighspark.core.scheduler.Task
-import scala.language.implicitConversions
+import org.lighspark.core.partition.{Partition, Partitioner}
 
+import scala.collection.mutable.ArrayBuffer
+import scala.language.implicitConversions
 import scala.reflect.ClassTag
 
 abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transient private var dependencies: Seq[Dependency[_]]) extends Serializable {
+
   def clearDependencies = dependencies = null
   def compute(split: Partition): Iterator[T]
   def getDependencies(): Seq[Dependency[_]] = dependencies
   def getPartitions(): Array[Partition]
 
 
-  implicit def rddToPairRDDFunctions[K, V](rdd: RDD[(K, V)]) (implicit kt: ClassTag[K], vt: ClassTag[V]): PairRDDFunctions[K, V] = {
-    new PairRDDFunctions(rdd)
-  }
-
   val id = sc.newRddId
   var partitioner: Partitioner = _
   def getOrCompute(split: Partition): Iterator[T] = {
     val blockId = Block.getId(id, split.index)
     if (SparkEnv.blockManager.isBlockCached(blockId)) {
-      SparkEnv.blockManager.getBlock(blockId).get.data.asInstanceOf[Iterator[T]]
+      SparkEnv.blockManager.getBlock(blockId).get.data.asInstanceOf[Seq[T]].toIterator
     } else {
       SparkEnv.getBlockLocation(blockId) match {
-        case Some(actorRefs) => SparkEnv.getBlock(blockId, actorRefs.head).get.data.asInstanceOf[Iterator[T]]
+        case Some(actorRefs) => SparkEnv.getBlock(blockId, actorRefs.head).get.data.asInstanceOf[Seq[T]].toIterator
         case None => compute(split)
       }
     }
@@ -44,13 +41,14 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
 //  }
 
   def groupBy[K](func: T => K)(implicit kt: ClassTag[K]): RDD[(K, Iterable[T])] = {
-    this.map(t => {
-      (func(t), t)
-    }).groupByKey()
+    this.map(t => (func(t), t)).groupByKey()
   }
+
   def map[U: ClassTag](f: T => U): RDD[U] = {
     new MappedRDD[U, T](this, (_, iter) => iter.map(f))
   }
+
+//  def mapPartitionWithIndex()
 
   def reduce(func: (T, T) => T): T = {
     val reducePartition: Iterator[T] => Option[T] =  iter => {
@@ -69,21 +67,33 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
         }
       }
     }
-    sc.dagScheduler.runJob(this, this.getPartitions().map{p => p.index}, reducePartition, mergeResult)
+    sc.dagScheduler.runJob(this, this.getPartitions().indices, reducePartition, mergeResult)
     jobResult.getOrElse(throw new RuntimeException("do not capture valid final result"))
   }
 
-  def parallel[T: ClassTag](data: Seq[T]): Unit = {
-    val rdd = new SequenceRDD[T](sc, data, 3)
-
-    val task = new Task[T](rdd, rdd.getPartitions().head, 1)
-    SparkEnv.sendTask(task)
-  }
-
   def collect(): Array[T] = {
-    null
-//    for (p <- getPartitions()) {
-//
-//    }
+    val jobResult = new ArrayBuffer[T]
+    val mergeResult = (_: Int, taskResult: Option[Array[T]]) => {
+      if (taskResult.isDefined) {
+        jobResult.appendAll(taskResult.get)
+      }
+    }
+    sc.dagScheduler.runJob(this, this.getPartitions().indices, (a: Iterator[T]) => Some(a.toArray), mergeResult)
+    jobResult.toArray
   }
+}
+
+object RDD {
+  implicit def doubleRDDToDoubleRDDFunctions(rdd: RDD[Double]): DoubleRDDFunctions = {
+    new DoubleRDDFunctions(rdd)
+  }
+
+  implicit def numericRDDToDoubleRDDFunctions[T](rdd: RDD[T])(implicit num: Numeric[T]) : DoubleRDDFunctions = {
+    new DoubleRDDFunctions(rdd.map(x => num.toDouble(x)))
+  }
+
+  implicit def rddToPairRDDFunctions[K, V](rdd: RDD[(K, V)]) (implicit kt: ClassTag[K], vt: ClassTag[V]): PairRDDFunctions[K, V] = {
+    new PairRDDFunctions(rdd)
+  }
+
 }

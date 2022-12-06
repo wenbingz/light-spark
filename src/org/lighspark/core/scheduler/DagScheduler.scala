@@ -15,6 +15,8 @@ class DagScheduler(private val sc: SparkContext) {
   val resultTask = new mutable.HashSet[Int]()
   val runningTask = new mutable.HashSet[Int]()
   val taskSetQueue = new mutable.Queue[Seq[Task[_]]]
+  val taskSetStack = new mutable.Stack[Seq[Task[_]]]
+  val parsedTasks = new mutable.HashSet[Task[_]] // to deduplicate tasks
   var dependencies: Seq[Dependency[_]] = _
   var results = new ArrayBuffer[Any]()
 
@@ -35,7 +37,7 @@ class DagScheduler(private val sc: SparkContext) {
   }
 
   def submitTasks(): Unit = {
-    val tasks = taskSetQueue.dequeue()
+    val tasks = taskSetStack.pop()
     tasks.map{
       task => {
         println("submitting task " + task.taskId)
@@ -44,7 +46,23 @@ class DagScheduler(private val sc: SparkContext) {
       }
     }
   }
+
+  def deduplicateAndPutIntoTaskSetStack(): Unit = {
+    taskSetQueue.map(taskSet => {
+      taskSet.filter(t => {
+        if(parsedTasks.contains(t))
+          false
+        else {
+          parsedTasks.add(t)
+          true
+        }
+      })
+    }).map {
+      taskSet => taskSetStack.push(taskSet)
+    }
+  }
   // TODO deduplicate tasks to avoid computed rdd partition calculation
+  // TODO only computes specific partitions of parent RDD instead of all the partitions (should pass in partition id of child partition)
   def parseTasks(): Unit = {
     if (dependencies == Nil || dependencies.isEmpty) {
       return
@@ -71,17 +89,30 @@ class DagScheduler(private val sc: SparkContext) {
         func: (Iterator[T]) => U,
         resultHandler: (Int, U) => Unit
       ) = {
-    val tasks = rdd.getPartitions().map { p => new ResultTask(rdd, p, taskId.getAndIncrement(), func).asInstanceOf[Task[Any]] }
+    val tasks = partitions.map { p => new ResultTask(rdd, rdd.getPartitions()(p), taskId.getAndIncrement(), func).asInstanceOf[Task[Any]] }
     taskSetQueue.enqueue(tasks)
     dependencies = rdd.getDependencies()
     parseTasks()
-    while (taskSetQueue.nonEmpty) {
+    deduplicateAndPutIntoTaskSetStack()
+    println(parsedTasks.size + " task(s) generated. ready to submit")
+    while (taskSetStack.nonEmpty) {
       submitTasks()
       waitForTaskSetFinished()
     }
     for (r <- results) {
       resultHandler(0, r.asInstanceOf[U])
     }
+    cleanJobStatus()
   }
 
+  def cleanJobStatus() = {
+    this.completedTask.clear()
+    this.resultTask.clear()
+    this.runningTask.clear()
+    this.taskSetQueue.clear()
+    this.taskSetStack.clear()
+    this.parsedTasks.clear()
+    this.dependencies = Nil
+    this.results.clear()
+  }
 }

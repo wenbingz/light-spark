@@ -12,7 +12,7 @@ class SparkContext {
   @transient var taskId: AtomicInteger = new AtomicInteger()
   @transient val blockManager = new BlockManager
   @transient val dagScheduler = new DagScheduler(this)
-  @transient var thread = SparkEnv.initialize(dagScheduler, blockManager, true, 5, null)
+  @transient var thread = SparkEnv.initialize(dagScheduler, blockManager, true, 5, 18888, "DriverActor", "localhost")
 
 
   def newRddId: Int = {

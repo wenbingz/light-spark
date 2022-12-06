@@ -38,7 +38,7 @@ class SequenceRDD[T: ClassTag](@transient private val sc: SparkContext, private 
     } else {
       val slices = splitSeq()
       slices.indices.map(i => {
-        val block = new Block(rddId = this.id, index = i, data = slices(i).toIterator)
+        val block = new Block(rddId = this.id, index = i, data = slices(i))
         SparkEnv.blockManager.addBlock(block)
         SparkEnv.reportBlock(block.id)
       })

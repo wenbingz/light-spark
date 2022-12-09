@@ -15,6 +15,7 @@ import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
+import scala.util.Random
 
 case class ExecutorInfo(actorUrl: String)
 class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvokeTimeout: Int, driverUrl: String) extends Actor {
@@ -28,7 +29,6 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
   }
 
   override def receive: Receive = {
-
     case RegisterExecutor(cores, memoryInMB) => {
       println(sender().path)
       val executorId = SparkEnv.id.addAndGet(1)
@@ -50,6 +50,7 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
       sender() ! SendBlock(blockManager.getBlock(blockId))
     }
     case HeartBeat(executorId) => {
+      // TODO remove executor when heartbeat timeout
       println("heart beat from " + executorId)
     }
     case TaskComplete(task, result) => {
@@ -184,13 +185,18 @@ object SparkEnv {
   def reportSuccessfulTask(task: Task[_], result: Any): Unit = {
     driverRef ! TaskComplete(task, result: Any)
   }
+
+  //TODO add location preference
   def sendTask[T: ClassTag](task: Task[T]): Boolean = {
     synchronized(id2Executor) {
       if (id2Executor.isEmpty) {
         println("no executor to send task " + task.taskId)
         return false
       } else {
-        val actorUrl = id2Executor.head._2.actorUrl
+        // random pick executor
+        val executorIds = id2Executor.keySet.toArray
+        val picked = new Random(System.currentTimeMillis()).nextInt(executorIds.length)
+        val actorUrl = id2Executor(executorIds(picked)).actorUrl
         println("try to send task " + task.taskId + " to " + actorUrl)
         actorRef ! SendExecutorTask(task, actorUrl)
         return true

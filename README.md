@@ -28,7 +28,7 @@ Driver output:
 ```
 and it is the result of 
 ```scala
-  val res = sparkContext.parallelize(Seq("abc", "ab", "abc", "bc", "ac", "abc", "cd", "abcd", "ab", "bc"), 3)
+val res = sparkContext.parallelize(Seq("abc", "ab", "abc", "bc", "ac", "abc", "cd", "abcd", "ab", "bc"), 3)
   .map(a => (a, 1))
   .groupBy(_._1)
   .map(a => (a._1, a._2.map(b => b._2).sum))

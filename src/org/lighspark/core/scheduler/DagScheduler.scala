@@ -61,8 +61,7 @@ class DagScheduler(private val sc: SparkContext) {
       taskSet => taskSetStack.push(taskSet)
     }
   }
-  // TODO deduplicate tasks to avoid computed rdd partition calculation
-  // TODO only computes specific partitions of parent RDD instead of all the partitions (should pass in partition id of child partition)
+
   def parseTasks(): Unit = {
     if (dependencies == Nil || dependencies.isEmpty) {
       return

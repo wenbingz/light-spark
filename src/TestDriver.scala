@@ -18,7 +18,7 @@ object TestDriver {
       (a._1 + b._1, a._2 ++ b._2)
     })
     println(res2)
-//    val res = sparkContext.parallelize(Seq(1, 2, 3, 4, 5, 6, 7), 3).min
+    val res = sparkContext.parallelize(Seq(1, 2, 3, 4, 5, 6, 7), 3).min
     val res3 = sparkContext.parallelize(Seq("abc", "ab", "abc", "bc", "ac", "abc", "cd", "abcd", "ab", "bc"), 3)
       .map(a => (a, 1))
       .groupBy(_._1)
@@ -26,8 +26,12 @@ object TestDriver {
       .collect()
     res3.map(a => println(a))
 
-
-//    print(res)
+    val res4 = sparkContext.parallelize(Seq(4, 3, 6, 2, 2, 232, 23, 234, 3, 4, 5, 3, 6, 5, 3, 5, 2, 5, 754, 3, 34), 3)
+      .sortBy(a => a)
+//    .mapPartitionWithIndex(_)
+      .collect()
+    res4.foreach(a => print(a + " "))
+    println()
     System.exit(0)
   }
 }

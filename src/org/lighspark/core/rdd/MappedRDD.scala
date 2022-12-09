@@ -8,7 +8,9 @@ class MappedRDDPartition(private val rddId: Int, private val splitId: Int) exten
   override val index: Int = splitId
 }
 
-class MappedRDD[U: ClassTag, T: ClassTag](prev: RDD[T], func: (Int, Iterator[T]) => Iterator[U]) extends RDD[U](prev) {
+class MappedRDD[U: ClassTag, T: ClassTag](prev: RDD[T], func: (Int, Iterator[T]) => Iterator[U], preservePartitioner: Boolean = false) extends RDD[U](prev) {
+  partitioner = if(preservePartitioner) prev.partitioner else null
+
   override def compute(split: Partition): Iterator[U] = {
     func(split.index, prev.iterator(prev.getPartitions()(split.index)))
   }

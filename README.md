@@ -1,11 +1,13 @@
 ## What is light spark
-just very simple implementation of spark to help beginner understand how Spark framework works
+just very simple implementation of spark to help beginners understand how Spark framework works
 
 ## All the Spark core concepts included
 - RDD
 - Dag scheduler (without stage split)
 - Block Manager (all cached in memory without LRU)
 - Shuffle (naive implementation)
+- Operator: `map`, `mapPartition`, `reduce`, `groupBy`, `sortBy`, `collect`
+- Partitioner: `HashPartitioner`, `RangePartitioner`
 - akka as messaging protocol
 
 ## It can really be run in distributed mode

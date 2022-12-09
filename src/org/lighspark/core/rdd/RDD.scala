@@ -40,6 +40,11 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
 //
 //  }
 
+  def sortBy[K](func: T => K, ascending: Boolean = false, numPartition: Int = this.getPartitions().length)(implicit ord: Ordering[K], ctag: ClassTag[K]): RDD[T] = {
+    this.map(t => (func(t), t))
+      .sortByKey()
+      .values()
+  }
   def groupBy[K](func: T => K)(implicit kt: ClassTag[K]): RDD[(K, Iterable[T])] = {
     this.map(t => (func(t), t)).groupByKey()
   }
@@ -48,7 +53,9 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
     new MappedRDD[U, T](this, (_, iter) => iter.map(f))
   }
 
-//  def mapPartitionWithIndex()
+  def mapPartitionWithIndex[U: ClassTag](func: (Int, Iterator[T]) => Iterator[U], preservePartitioner: Boolean = false): RDD[U] = {
+    new MappedRDD[U, T](this, func, preservePartitioner)
+  }
 
   def reduce(func: (T, T) => T): T = {
     val reducePartition: Iterator[T] => Option[T] =  iter => {
@@ -96,4 +103,8 @@ object RDD {
     new PairRDDFunctions(rdd)
   }
 
+  implicit def rddToOrderedRDDFunctions[K: Ordering : ClassTag, V: ClassTag](rdd: RDD[(K, V)])
+  : OrderedRDDFunctions[K, V] = {
+    new OrderedRDDFunctions[K, V](rdd)
+  }
 }

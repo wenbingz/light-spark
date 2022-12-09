@@ -1,9 +1,9 @@
 package org.lighspark.core.partition
 
 import org.lighspark.core.rdd.RDD
+import org.lighspark.utils.SamplingUtils
 
 import scala.reflect.ClassTag
-import scala.util.Random
 
 abstract class Partitioner extends Serializable {
   def numPartition: Int
@@ -29,30 +29,25 @@ class HashKeyPartitioner(val splits: Int) extends Partitioner {
   override def numPartition: Int = splits
 }
 
-class RangePartitioner[K: Ordering : ClassTag, V: ClassTag](val splits: Int, rdd: RDD[_ <: Product2[K, V]], private var ascending: Boolean = true) extends Partitioner {
-  private var bounds: Array[K] = new Array[K](splits - 1)
-  private var len: Int = 0
-  override def numPartition: Int = splits
-  val random = new Random(System.currentTimeMillis())
+class RangePartitioner[K: Ordering : ClassTag, V: ClassTag](val splits: Int, rdd: RDD[_ <: Product2[K, V]], private var ascending: Boolean = true, private val sampleSizePerPartition: Int = 20) extends Partitioner {
 
-  def getBounds() = {
-    for (p <- rdd.getPartitions()) {
-      val iter = rdd.iterator(p)
-      while (iter.hasNext) {
-        if (len < splits - 1) {
-          bounds(len) = iter.next()._1
-          len += 1
-        } else {
-          val r = random.nextInt(splits)
-          if (r < splits - 1) {
-            bounds(r) = iter.next()._1
-          }
-        }
-      }
-    }
+    val bounds: Array[K] = {
+    val sampleSize = math.min(splits * sampleSizePerPartition, 1e6)
+    val sampleSizePerOriginalPartition = math.ceil(3.0d * sampleSize / rdd.getPartitions().length).toInt
+    val sampleFromPartition = rdd.map(_._1).mapPartitionWithIndex((idx, p) => {
+      val (sampled, cnt) = SamplingUtils.reservoirSampleAndCount(p, sampleSizePerOriginalPartition)
+      Iterator((idx, sampled, cnt))
+    }).collect()
+    SamplingUtils.mapSamplingResultToBounds(splits, sampleFromPartition)
   }
+
+  override def numPartition: Int = bounds.length + 1
   override def getPartition(key: Any): Int = {
-    getBounds()
-    0
+    val partition = SamplingUtils.binarySearch(bounds, key.asInstanceOf[K]) + 1
+    if (ascending) {
+      partition
+    } else {
+      bounds.length - partition
+    }
   }
 }

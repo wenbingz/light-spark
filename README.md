@@ -6,14 +6,14 @@ just a very simple implementation of Spark to help beginners understand how Spar
 - Dag scheduler (without stage split)
 - Block Manager (all cached in memory without LRU)
 - Shuffle (naive implementation)
-- Operator: `map`, `mapPartition`, `reduce`, `groupBy`, `sortBy`, `collect`
+- Operator: `map`, `mapPartition`, `reduce`, `groupBy`, `sortBy`, `collect`, `min`
 - Partitioner: `HashPartitioner`, `RangePartitioner`
 - akka as messaging protocol
 
 ## Test
 ### Run driver and executor in single process
 ```bash
-run with program entrypoint in org.lightspark.TestSpark.scala
+run with program entrypoint in `org.lightspark.TestSpark`
 
 mvn clean package
 java -jar spark-1.0-SNAPSHOT.jar
@@ -52,7 +52,7 @@ val res4 = sc.parallelize(
   .sortBy(a => a)
   .collect()
 ```
-### Run in Fully Distributed mode
+### Run in fully distributed mode
 #### Driver source code
 ```scala
 import org.lighspark.core.{SparkContext, SparkEnv}
@@ -72,7 +72,9 @@ object TestSpark {
 import org.lighspark.core.{SparkContext, BlockManager, SparkEnv}
 
 object Executor {
-  val executorThread = SparkEnv.initialize(null, new BlockManager, false, 5, 18888, "DriverActor", "localhost", 22552, "ExecutorActor", "localhost")
-  Thread.sleep(1000 * 1000)
+  def main(args: Array[String]) = {
+    val executorThread = SparkEnv.initialize(null, new BlockManager, false, 5, 18888, "DriverActor", "localhost", 22552, "ExecutorActor", "localhost")
+    Thread.sleep(1000 * 1000)
+  }
 }
 ```

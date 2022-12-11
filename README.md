@@ -10,8 +10,6 @@ just a very simple implementation of Spark to help beginners understand how Spar
 - Partitioner: `HashPartitioner`, `RangePartitioner`
 - akka as messaging protocol
 
-## It can really be run in distributed mode
-
 ## Test
 ### Run driver and executor in single process
 ```bash

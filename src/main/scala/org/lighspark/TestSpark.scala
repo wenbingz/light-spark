@@ -23,7 +23,7 @@ object TestSpark {
     val res2 = sc.parallelize(Seq(1, 2, 3, 4, 5, 6, 7), 3).min
     // Test case 3: collect
     val res3 = sc.parallelize(
-      Seq("abc", "ab", "abc", "bc", "ac", "abc", "cd", "abcd", "ab", "bc"), 3)
+      Seq("abc", "ab", "abc", "bc", "ac", "abc", "cd", "abed", "ab", "bc"), 3)
       .map(a => (a, 1))
       .groupBy(a => a._1)
       .map(a => (a._1, a._2.map(b => b._2).sum))

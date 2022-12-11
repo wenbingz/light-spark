@@ -13,7 +13,7 @@ just a very simple implementation of Spark to help beginners understand how Spar
 ## Test
 ### Run driver and executor in single process
 ```bash
-run with program entrypoint in TestDriver.scala
+run with program entrypoint in org.lightspark.TestSpark.scala
 
 mvn clean package
 java -jar spark-1.0-SNAPSHOT.jar

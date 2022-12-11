@@ -1,9 +1,12 @@
 package org.lighspark.core.scheduler
 
+import org.apache.log4j.Logger
+import org.lighspark.core.SparkContext
+import org.lighspark.core.rdd.Dependency
 import org.lighspark.core.{SparkContext, SparkEnv}
 import org.lighspark.core.rdd.{Dependency, RDD}
 
-import scala.actors.threadpool.AtomicInteger
+import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
@@ -19,13 +22,14 @@ class DagScheduler(private val sc: SparkContext) {
   val parsedTasks = new mutable.HashSet[Task[_]] // to deduplicate tasks
   var dependencies: Seq[Dependency[_]] = _
   var results = new ArrayBuffer[Any]()
+  val log = Logger.getLogger(this.getClass)
 
 
   def completeATask(task: Task[_], res: Any): Unit = synchronized {
-    println("task " + task.taskId + " completed")
+    log.info("task " + task.taskId + " completed")
     task match {
       case rt: ResultTask[_, _] => {
-        println("it is a result task " + res)
+        log.info("it is a result task " + res)
         results.append(res)
       }
       case _ => {
@@ -40,7 +44,7 @@ class DagScheduler(private val sc: SparkContext) {
     val tasks = taskSetStack.pop()
     tasks.map{
       task => {
-        println("submitting task " + task.taskId)
+        log.info("submitting task " + task.taskId)
         SparkEnv.sendTask(task)
         runningTask.add(task.taskId)
       }
@@ -93,7 +97,7 @@ class DagScheduler(private val sc: SparkContext) {
     dependencies = rdd.getDependencies()
     parseTasks()
     deduplicateAndPutIntoTaskSetStack()
-    println(parsedTasks.size + " task(s) generated. ready to submit")
+    log.info(parsedTasks.size + " task(s) generated. ready to submit")
     while (taskSetStack.nonEmpty) {
       submitTasks()
       waitForTaskSetFinished()

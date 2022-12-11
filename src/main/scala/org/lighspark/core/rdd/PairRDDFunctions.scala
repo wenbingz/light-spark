@@ -1,6 +1,5 @@
 package org.lighspark.core.rdd
 
-
 import org.lighspark.core.SparkEnv
 import org.lighspark.core.partition.HashKeyPartitioner
 
@@ -24,7 +23,11 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])(implicit kt: ClassTag[K], vt: Cl
             }
           }
         }
-        hashMap.toIterator
+        val res = new ArrayBuffer[(K, Iterable[V])]
+        for ((k, v) <- hashMap) {
+          res.append((k, v.toIterable))
+        }
+        res.toIterator
       }
     }
   }

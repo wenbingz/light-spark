@@ -1,10 +1,9 @@
-package org.lighspark
-package core
+package org.lighspark.core
 
 import scala.collection.mutable
 
 
-class Block(private val rddId: Int, private val index: Int, val data: Seq[Any]) extends Serializable {
+class Block(private val rddId: Int, private val index: Int, val data: Array[Any]) extends Serializable {
   final def id = Block.getId(rddId, index)
 }
 object Block {

@@ -10,7 +10,7 @@ case object SendHeartBeat
 case class SendBlock(block: Option[Block])
 case class QueryBlock(blockId: String)
 case class GetBlock(blockId: String)
-case class ReportBlock(blockId: String)
+case class ReportBlock(blockId: String, actorRef: String)
 case class BlockLocation(blockId: String, actorRef: Option[Seq[String]])
 case class SendTask[T](task: Task[T])
 case class TaskComplete(task: Task[_], result: Any)

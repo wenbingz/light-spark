@@ -1,10 +1,11 @@
-package org.lighspark
-package core
+package org.lighspark.core
 
+import org.apache.log4j.Logger
+import org.lighspark.core.rdd.SequenceRDD
 import org.lighspark.core.rdd.{RDD, SequenceRDD}
-import org.lighspark.core.scheduler.{DagScheduler, Task}
+import org.lighspark.core.scheduler.DagScheduler
 
-import scala.actors.threadpool.AtomicInteger
+import java.util.concurrent.atomic.AtomicInteger
 import scala.reflect.ClassTag
 
 class SparkContext {
@@ -12,9 +13,7 @@ class SparkContext {
   @transient var taskId: AtomicInteger = new AtomicInteger()
   @transient val blockManager = new BlockManager
   @transient val dagScheduler = new DagScheduler(this)
-  @transient var thread = SparkEnv.initialize(dagScheduler, blockManager, true, 5, 18888, "DriverActor", "localhost")
-
-
+  @transient var thread = SparkEnv.initialize(dagScheduler, blockManager, true, 5, 18888, "DriverActor", "localhost", -1, null, null)
   def newRddId: Int = {
     rddId.getAndIncrement()
   }

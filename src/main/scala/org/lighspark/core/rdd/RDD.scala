@@ -1,6 +1,8 @@
-package org.lighspark
-package core.rdd
-import core.{Block, SparkContext, SparkEnv}
+package org.lighspark.core.rdd
+
+import org.lighspark.core.SparkContext
+import org.lighspark.core.partition.Partition
+import org.lighspark.core.{Block, SparkContext, SparkEnv}
 import org.lighspark.core.partition.{Partition, Partitioner}
 
 import scala.collection.mutable.ArrayBuffer
@@ -20,10 +22,10 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
   def getOrCompute(split: Partition): Iterator[T] = {
     val blockId = Block.getId(id, split.index)
     if (SparkEnv.blockManager.isBlockCached(blockId)) {
-      SparkEnv.blockManager.getBlock(blockId).get.data.asInstanceOf[Seq[T]].toIterator
+      SparkEnv.blockManager.getBlock(blockId).get.data.asInstanceOf[Array[T]].toIterator
     } else {
       SparkEnv.getBlockLocation(blockId) match {
-        case Some(actorRefs) => SparkEnv.getBlock(blockId, actorRefs.head).get.data.asInstanceOf[Seq[T]].toIterator
+        case Some(actorRefs) => SparkEnv.getBlock(blockId, actorRefs.head).get.data.asInstanceOf[Array[T]].toIterator
         case None => compute(split)
       }
     }
@@ -35,10 +37,6 @@ abstract class RDD[T: ClassTag](@transient private val sc: SparkContext, @transi
   final def iterator(split: Partition): Iterator[T] = {
     getOrCompute(split)
   }
-
-//  def repartition(partitionNum: Int) = {
-//
-//  }
 
   def sortBy[K](func: T => K, ascending: Boolean = false, numPartition: Int = this.getPartitions().length)(implicit ord: Ordering[K], ctag: ClassTag[K]): RDD[T] = {
     this.map(t => (func(t), t))

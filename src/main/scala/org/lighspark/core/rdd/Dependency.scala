@@ -1,5 +1,4 @@
-package org.lighspark
-package core.rdd
+package org.lighspark.core.rdd
 
 import org.lighspark.core.partition.Partition
 

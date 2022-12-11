@@ -5,22 +5,24 @@ import akka.pattern.ask
 import akka.remote.transport.ActorTransportAdapter.AskTimeout
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
+import org.apache.log4j.Logger
+import org.lighspark.core.scheduler.DagScheduler
+import org.lighspark.rpc.InternalGetBlock
 import org.lighspark.core.scheduler.{DagScheduler, Task}
 import org.lighspark.executor.TaskScheduler
 import org.lighspark.rpc.{BlockLocation, GetBlock, HeartBeat, InternalGetBlock, QueryBlock, RegisterExecutor, RegisteredExecutor, ReportBlock, SendBlock, SendExecutorTask, SendHeartBeat, SendTask, TaskComplete}
 
 import java.util.concurrent.ConcurrentLinkedQueue
-import scala.actors.threadpool.AtomicInteger
+import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
-import scala.concurrent.Await
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 import scala.util.Random
 
 case class ExecutorInfo(actorUrl: String)
 class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvokeTimeout: Int, driverUrl: String) extends Actor {
-
-
+  @transient val log = Logger.getLogger(this.getClass)
   override def preStart(): Unit = {
     if (driverUrl != null) {
       SparkEnv.driverRef = context.actorSelection(driverUrl)
@@ -30,7 +32,6 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
 
   override def receive: Receive = {
     case RegisterExecutor(cores, memoryInMB) => {
-      println(sender().path)
       val executorId = SparkEnv.id.addAndGet(1)
       SparkEnv.id2Executor += (executorId -> ExecutorInfo(sender().path.toString))
       sender() ! RegisteredExecutor(executorId)
@@ -38,20 +39,18 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
     case QueryBlock(blockId) => {
       sender() ! BlockLocation(blockId, blockManager.queryBlockLocation(blockId))
     }
-    case ReportBlock(blockId) => {
-      if (sender().path.toString.contains("akka.tcp")) {
-        blockManager.addBlockLocation(blockId, sender().path.toString)
-      } else { // only driver will report block to itself
-        blockManager.addBlockLocation(blockId, SparkEnv.driverUrl)
-      }
+    case ReportBlock(blockId, actorRef) => {
+      log.info("block report from " + actorRef + " of block " + blockId)
+      blockManager.addBlockLocation(blockId, actorRef)
       sender() ! "succ"
     }
     case GetBlock(blockId) => {
+      log.info(sender().path + " requests block " + blockId)
       sender() ! SendBlock(blockManager.getBlock(blockId))
     }
     case HeartBeat(executorId) => {
       // TODO remove executor when heartbeat timeout
-      println("heart beat from " + executorId)
+      log.info("heart beat from " + executorId)
     }
     case TaskComplete(task, result) => {
       dagScheduler.completeATask(task, result)
@@ -59,7 +58,7 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
 
     case RegisteredExecutor(executorId: Int) => {
       SparkEnv.executorId = executorId
-      println("registered with executor Id " + executorId)
+      log.info("registered with executor Id " + executorId)
     }
     case SendTask(task) => {
       SparkEnv.queue.synchronized {
@@ -71,9 +70,8 @@ class SparkEnv(dagScheduler: DagScheduler, blockManager: BlockManager, syncInvok
     }
     case InternalGetBlock(blockId, actorUrl) => {
       val actorRef = context.actorSelection(actorUrl)
-      println("trying to get block from " + actorUrl)
-      val res = Await.result((actorRef ? GetBlock(blockId)).mapTo[SendBlock], Timeout(syncInvokeTimeout seconds).duration)
-      println("got block " + res.block.get.id)
+      log.info("trying to get block " + blockId + " from " + actorUrl)
+      val res = actorRef ? GetBlock(blockId)
       sender() ! res
     }
     case SendExecutorTask(task, actorUrl) => {
@@ -90,6 +88,7 @@ object SparkEnv {
   var isDriver: Boolean = false
   var syncInvokeTimeout: Int = _
   var driverUrl: String = null
+  var executorUrl: String = null
   var executorId: Int = _
   var actorRef: ActorRef = _
   var executorRef: ActorRef = _
@@ -99,6 +98,9 @@ object SparkEnv {
   var driverRef: ActorSelection = _
   var dagScheduler: DagScheduler = _
   val defaultShufflePartition = 10
+  val defaultTaskSchedulerIntervalInMS = (0.5 * 1000).toLong
+  val random = new Random(System.currentTimeMillis())
+  val log = Logger.getLogger(this.getClass)
   def createDriver(): SparkEnv = {
     new SparkEnv(dagScheduler, blockManager, syncInvokeTimeout, null)
   }
@@ -107,11 +109,12 @@ object SparkEnv {
     new SparkEnv(dagScheduler, blockManager, syncInvokeTimeout, driverUrl)
   }
 
-  def initialize(dagScheduler: DagScheduler, blockManager: BlockManager, isDriver: Boolean, syncInvokeTimeout: Int, driverPort: Int, driverActorName: String, driverHost: String): Thread = {
+  def initialize(dagScheduler: DagScheduler, blockManager: BlockManager, isDriver: Boolean, syncInvokeTimeout: Int, driverPort: Int, driverActorName: String, driverHost: String, executorPort: Int, executorActorName: String, executorHost: String): Thread = {
     this.isDriver = isDriver
     this.blockManager = blockManager
     this.syncInvokeTimeout = syncInvokeTimeout
     this.driverUrl = "akka.tcp://DriverActorSystem@" + driverHost + ":" + driverPort +  "/user/" + driverActorName
+    this.executorUrl = "akka.tcp://ExecutorActorSystem@" + executorHost + ":" + executorPort +  "/user/" + executorActorName
     this.dagScheduler = dagScheduler
     if (isDriver) {
       val config = ConfigFactory.parseString(
@@ -134,13 +137,15 @@ object SparkEnv {
       val config = ConfigFactory.parseString(
         """
           |akka.actor.provider = "akka.remote.RemoteActorRefProvider"
-          |akka.remote.netty.tcp.hostname = localhost
-          |""".stripMargin
+          |akka.remote.netty.tcp.hostname = %s
+          |akka.remote.netty.tcp.port = %d
+          |""".format(executorHost, executorPort).stripMargin
       )
       val executorActorSystem = ActorSystem("ExecutorActorSystem", config)
-      val actorRef = executorActorSystem.actorOf(Props(createExecutor()), "ExecutorActor")
+      val actorRef = executorActorSystem.actorOf(Props(createExecutor()), executorActorName)
       SparkEnv.executorRef = actorRef
       taskScheduler = new TaskScheduler(blockManager)
+      taskScheduler.start()
       val thread = new Thread() {
         override def run() = {
           while (true) {
@@ -156,19 +161,21 @@ object SparkEnv {
 
   def getBlock(blockId: String, actorUrl: String): Option[Block] = {
     if (isDriver) {
-      val res = Await.result((actorRef ? InternalGetBlock(blockId, actorUrl)).mapTo[SendBlock], Timeout(syncInvokeTimeout seconds).duration)
+      val future = Await.result((actorRef ? InternalGetBlock(blockId, actorUrl)).mapTo[Future[SendBlock]], Timeout(syncInvokeTimeout seconds).duration)
+      val res = Await.result(future, Timeout(SparkEnv.syncInvokeTimeout second).duration)
       res.block
     } else {
-      val res = Await.result((executorRef ? InternalGetBlock(blockId, actorUrl)).mapTo[SendBlock], Timeout(syncInvokeTimeout seconds).duration)
+      val future = Await.result((executorRef ? InternalGetBlock(blockId, actorUrl)).mapTo[Future[SendBlock]], Timeout(syncInvokeTimeout seconds).duration)
+      val res = Await.result(future, Timeout(SparkEnv.syncInvokeTimeout second).duration)
       res.block
     }
   }
 
   def reportBlock(blockId: String) = {
     if (isDriver) {
-      Await.result((actorRef ? ReportBlock(blockId)).mapTo[String], Timeout(syncInvokeTimeout seconds).duration)
+      Await.result((actorRef ? ReportBlock(blockId, driverUrl)).mapTo[String], Timeout(syncInvokeTimeout seconds).duration)
     } else {
-      Await.result((driverRef ? ReportBlock(blockId)).mapTo[String], Timeout(syncInvokeTimeout seconds).duration)
+      Await.result((driverRef ? ReportBlock(blockId, executorUrl)).mapTo[String], Timeout(syncInvokeTimeout seconds).duration)
     }
   }
 
@@ -190,14 +197,14 @@ object SparkEnv {
   def sendTask[T: ClassTag](task: Task[T]): Boolean = {
     synchronized(id2Executor) {
       if (id2Executor.isEmpty) {
-        println("no executor to send task " + task.taskId)
+        log.info("no executor to send task " + task.taskId)
         return false
       } else {
         // random pick executor
         val executorIds = id2Executor.keySet.toArray
-        val picked = new Random(System.currentTimeMillis()).nextInt(executorIds.length)
+        val picked = random.nextInt(executorIds.length)
         val actorUrl = id2Executor(executorIds(picked)).actorUrl
-        println("try to send task " + task.taskId + " to " + actorUrl)
+        log.info("try to send task " + task.taskId + " to " + actorUrl)
         actorRef ! SendExecutorTask(task, actorUrl)
         return true
       }

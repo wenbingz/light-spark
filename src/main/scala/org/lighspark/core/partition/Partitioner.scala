@@ -30,11 +30,10 @@ class HashKeyPartitioner(val splits: Int) extends Partitioner {
 }
 
 class RangePartitioner[K: Ordering : ClassTag, V: ClassTag](val splits: Int, rdd: RDD[_ <: Product2[K, V]], private var ascending: Boolean = true, private val sampleSizePerPartition: Int = 20) extends Partitioner {
-
     val bounds: Array[K] = {
     val sampleSize = math.min(splits * sampleSizePerPartition, 1e6)
     val sampleSizePerOriginalPartition = math.ceil(3.0d * sampleSize / rdd.getPartitions().length).toInt
-    val sampleFromPartition = rdd.map(_._1).mapPartitionWithIndex((idx, p) => {
+    val sampleFromPartition = rdd.map(a => a._1).mapPartitionWithIndex((idx, p) => {
       val (sampled, cnt) = SamplingUtils.reservoirSampleAndCount(p, sampleSizePerOriginalPartition)
       Iterator((idx, sampled, cnt))
     }).collect()

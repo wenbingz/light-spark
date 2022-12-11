@@ -1,6 +1,7 @@
-package org.lighspark
-package core.rdd
+package org.lighspark.core.rdd
 
+import org.lighspark.core.SparkContext
+import org.lighspark.core.partition.Partition
 import org.lighspark.core.{Block, SparkContext, SparkEnv}
 import org.lighspark.core.partition.{HashPartitioner, Partition}
 
@@ -38,7 +39,7 @@ class SequenceRDD[T: ClassTag](@transient private val sc: SparkContext, private 
     } else {
       val slices = splitSeq()
       slices.indices.map(i => {
-        val block = new Block(rddId = this.id, index = i, data = slices(i))
+        val block = new Block(rddId = this.id, index = i, data = slices(i).toArray)
         SparkEnv.blockManager.addBlock(block)
         SparkEnv.reportBlock(block.id)
       })

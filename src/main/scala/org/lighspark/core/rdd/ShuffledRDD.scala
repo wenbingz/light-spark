@@ -1,10 +1,10 @@
 package org.lighspark.core.rdd
 
+import org.lighspark.core.partition.Partition
 import org.lighspark.core.SparkEnv
-import org.lighspark.core.partition.{HashKeyPartitioner, Partition, Partitioner, RangePartitioner}
+import org.lighspark.core.partition.{Partition, Partitioner}
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
 class ShuffledRDDPartition(private val rddId: Int, private val splitId: Int) extends Partition {

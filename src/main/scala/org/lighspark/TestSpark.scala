@@ -44,6 +44,5 @@ object TestSpark {
     println()
     println("****************************")
     res4.foreach(a => print(a + " "))
-    System.exit(0)
   }
 }
